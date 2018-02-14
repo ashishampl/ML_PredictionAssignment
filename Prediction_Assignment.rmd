@@ -1,0 +1,145 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Ashish A"
+date: "February 12, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+# Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. 
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The goal of this project is to predict the manner in which the participants did the exercise. This is the classe variable of the training set, which classifies the correct and incorrect outcomes into A, B, C, D, and E categories. This report describes:
+- how the model for the project was built, 
+its cross validation, 
+expected out of sample error calculation, 
+and the choices made. 
+
+It was used successfully to accurately predict all 20 different test cases on the Coursera website.
+
+# Load Source Data 
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r cache=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+setwd("C:/Users/agarwala/Desktop/R/App/coursera assignments")
+train.original <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!", ""))
+test.original  <- read.csv("pml-testing.csv",  na.strings = c("NA", "#DIV/0!", ""))
+dim(train.original)
+dim(test.original)
+```
+We have read the training and test data in two separate dataframes. 
+Training data contains 19622 observations of 160 variables whereas test data contains 20 observations of 160 variables.
+
+# Data Cleaning 
+First we remove the columns which contains NA values. This reduces the number of variables down to 60.
+```{r cache=FALSE}
+train.cleanNA <- train.original[ , colSums(is.na(train.original)) == 0]
+dim(train.cleanNA)
+```
+
+Then we remove the first 7 features since they are related to the time-series or are not numeric and are mainly for information purpose. The variables which have the text "belt, forearm, arm, or dumbell" in its name contains actual data for analysis. We also keep the "classe" variable in a separate frame so that we can perform the correlation analysis on the remaining variables. 
+
+```{r cache=FALSE}
+train.clean <- train.cleanNA[, 8:59]
+train.classe <- train.cleanNA[, 60, drop=FALSE]
+dim(train.clean)
+dim(train.classe)
+```
+
+## Correlation Analysis
+
+We use findCorrelation to find the correlated variables. We then remove these from our clean dataset. We then merge this dataframe with the "classe" variable dataframe. 
+
+As a result we finally get a dataframe which is now clean and ready for creating model.
+
+```{r cache=FALSE}
+train.clean <- train.clean[sapply(train.clean, is.numeric)]
+train.cor = cor(train.clean)
+corr.matrix = findCorrelation(train.cor, cutoff=0.75, verbose = TRUE) # putt any value as a "cutoff"
+corr.matrix = sort(corr.matrix)
+train.reduced = train.clean[,-c(corr.matrix)]
+train.reduced<- data.frame(train.reduced, train.classe)
+dim (train.reduced)
+```
+After removing the correlated variables, the number of variables are reduced to 32.
+
+# Cross Validation of Data
+
+Before we start building and analysing our prediction models, we will partition the original training data into two parts. We will use these two subsets to do cross validation of our model.
+
+Here we have subsetted our training data by 60:40 ratio. We will use the first dataset (train.train) for fitting the model and the second dataset (train.test) to cross validate the model.
+```{r cache=FALSE}
+set.seed(12345)
+train.partition <- createDataPartition(train.reduced$classe, p=0.6, list=FALSE)
+train.train <- train.reduced[train.partition,]
+train.test <- train.reduced[-train.partition,]
+dim(train.train)
+dim(train.test)
+```
+
+# Prediction Model Building
+We will build two models for analysis - Random Forest and Decision Tree. We will use the first subset (train.train) of training data to fit the model. We then use ths model to predict values for "classe" variable for second subset (train.test). Then we display the confusion matrix to analyse the results.
+
+## A. Random Forest
+
+```{r cache=FALSE}
+rf.model <- randomForest(classe ~ ., data = train.train, ntree = 500)
+rf.model
+
+rf.predict <- predict(rf.model, newdata=train.test)
+cm.rf.test <- confusionMatrix(rf.predict, train.test$classe)
+cm.rf.test
+```
+Following observations are made based on confusion matrix
+
+  - **Accuray is 99.45%** which is a very good indicator that RF model will predict good results
+  - **Sensitivity is high** which suggests that there are few false negative results
+  - **Specificity is high** which suggests that  there are few false positive results
+  - Out of sample error rate is 0.55% which is very low
+  
+## B. Decision Tree
+```{r cache=FALSE}
+dt.model <- rpart(classe ~ ., data = train.train, method="class")
+fancyRpartPlot(dt.model)
+
+dt.predict <- predict(dt.model, newdata=train.test, type="class")
+cm.dt.test <- confusionMatrix(dt.predict, train.test$classe)
+cm.dt.test
+```
+Following observations are made based on confusion matrix
+
+  - Accuray is 67.55%
+  - Sensitivity and specificity are in medium range. 
+  
+  
+# Results
+
+Based on the accuracy, sensitivity, and specificity of two models, **Random Forest** has better accuracy. We will use this model to predict the "classe" variable for the test data of 20 observations.
+
+```{r cache=FALSE}
+predict.test.original <- predict(rf.model, newdata=test.original)
+predict.test.original
+```
+
+These final predictions will be submitted for grading. It shows that the Random Forest model a better fitted prediction model.
